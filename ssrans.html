@@ -12,7 +12,7 @@
 <body>
     <header>
         <div class="container">
-            <a href="index.html" class="back-link">← Back to Home</a>
+            <a href="index.html#ssrans" class="back-link">← Back to Home</a>
         </div>
     </header>
 
@@ -599,33 +599,23 @@ def decompress(x):
                 gather-op, so the trouble of developing the probability model was indeed worth it. Additionally, SSrANS
                 does not need extra VMEM to store frequency tables.
             </p>
-            <p>
-                In contrast, lets test the same script on an NVIDIA T4 GPU:
-            </p>
-            <figure>
-                <img title="Throughput comparison of all 3 algorithms on GPU"
-                    alt="Throughput comparison of all 3 algorithms on GPU" style="width: 90%;"
-                    src="img/ssrans/gpu_throughput_comparison.png">
-                <figcaption>
-                    Figure 7: Throughput of bitmap, vanilla rANS and SSrANS on T4 GPU measured in Msym/s
-                </figcaption>
-            </figure>
-            <p>
-                Exact opposite. Bitmaps are very fast on GPU, and rANS is handicapped by the totally serial nature of
-                each thread ($X_{t+1}$ depends on $X_t$), resulting in a lot of stalled instructions and underutilized
-                ALU. There are <i>definitely</i> better ways to implement rANS on GPU than the straightforward JAX
-                kernel we have here, but the point is that bitmap on GPU is fast.
-            </p>
-            <p>
-                This proves our original structural analysis of bitmap compression schemes: they are fast on GPU because
-                of the shared memory with many banks and read-ports, so prefix-sum and gather is fast. On TPU-like
-                hardware, or even on CPU SIMD, that isn't the case, making SSrANS the superior option.
-            </p>
-            <p>
-                And theres a reason that new AI accelerators (that don't have a graphics processing lineage) are the
-                way they are. There are many benefits to having a large VMEM at the expense of fewer read-ports, and we
-                should expect future AI accelerators to be more TPU-like than GPU-like.
-            </p>
+            <div class="callout aside">
+                <strong>What about GPU?</strong>
+                <p>
+                    Running the same JAX code on a T4 GPU shows the exact opposite results: the bitmap kernel is
+                    fastest by a significant margin.
+                </p>
+                <p>
+                    Part of that is because, as we discussed before, the cost of gathers is far lower on GPUs. But
+                    additionally, the rANS kernels are far from optimal. The serial nature of rANS leads to stalled
+                    instructions and underutilized hardware. An optimal rANS kernel for GPUs will need more work, for
+                    example: assigning multiple streams per thread.
+                </p>
+                <p>
+                    But the point stands: bitmaps are cheap on GPU, expensive on TPU. And theres a reason why new AI
+                    accelerators (that don't have a graphics processing lineage) resemble TPUs, not GPUs.
+                </p>
+            </div>
             <p>
                 To round it out, lets compare the compression ratios of all three algorithms. I wrote <a
                     href="https://github.com/UditDey/pitch_site/blob/main/code/ssrans/ratio_comparison_graph.py"
@@ -672,12 +662,29 @@ def decompress(x):
                 full potential of various pruning methods can be used, not just in KV caches, but also activations and
                 gradients, allowing for more efficient LLMs across the stack.
             </p>
+
+            <h2>Future Work</h2>
+            <p>
+                Even apart from deliberate pruning, KV caches are known to naturally have non-uniform distribution. The
+                <a href="https://arxiv.org/html/2509.00579v1#:~:text=3%2E-,Design%20Methodology">KVComp authors plotted
+                    histograms</a> of quantized KV caches and showed a clear unimodal distribution.
+            </p>
+            <p>Similarly, activations and weights are also known to naturally have peaky, unimodal distributions.</p>
+            <p>
+                This creates a promising future direction: table-free probability models for unimodal data. A simple
+                triangle function might work well, while being computationally light enough.
+            </p>
+            <p>
+                This case has an even stronger argument because sparse data has bitmap representations, but unimodal
+                data has no analogue. So, even on GPUs, we would be forced to use entropy coding, and our zero-lookup
+                approach would be especially useful.
+            </p>
         </div>
     </main>
 
     <footer>
         <div class="container">
-            <a href="index.html" class="back-link">← Back to Home</a>
+            <a href="index.html#ssrans" class="back-link">← Back to Home</a>
             <p>
                 <a href="mailto:you@example.com">Email</a> ·
                 <a href="https://linkedin.com/in/you">LinkedIn</a>
