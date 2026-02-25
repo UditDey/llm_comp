@@ -132,7 +132,7 @@
 
             <h2>Collecting Activation Inputs</h2>
             <p>
-                This is simple enough. We hook into the <code>XXX.mlp.down_proj</code> layer, run the LLM through $N$
+                This is simple enough. We hook into the <code>14.mlp.down_proj</code> layer, run the LLM through $N$
                 tokens from c4, and collect a dataset of layer input vectors $\mathcal{D} = \{x^{(n)} \}_{n=1}^N$ where
                 $x^{(n)} \in \mathbb{R}^d$ and $d$ is the <code>in_features</code> of the MLP layer.
             </p>

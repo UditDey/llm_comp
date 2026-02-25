@@ -23,152 +23,169 @@
 
             <h2>The Problem</h2>
             <p>
-                As discussed in <a href="prereq.html#codebook_compression">Prerequisite Concepts</a>, inference on
+                As discussed in <a href="prereq.html#codebook_compression">Prerequisite Concepts</a>, inference in
                 codebook compressed LLMs requires reconstructing (i.e. decompressing) the weight matrices like so:
             <pre><code class="language-python">for idx in indices:
     weight_group = codebook[idx]</code></pre>
-
-            And the <code>codebook[idx]</code> operation makes this an indirect memory access pattern.
             </p>
-
             <p>
-                This makes things particularly worse for vector processors. If we try to parallelize
-                this decompression on a vector processor, each thread could end up with a different <code>idx</code>.
-                This is a <u>gather</u> operation and read-coalescion is impossible.
+                If we try to vectorize this, each thread does an independent <code>codebook[idx]</code>, making this a
+                <a href="https://en.wikipedia.org/wiki/Gather/scatter_(vector_addressing)#Gather">gather operation</a>:
             </p>
             <figure>
                 <img src="img/echo/gather.svg" title="Example Gather Operation" alt="Example Gather Operation">
                 <figcaption>
-                    FIgure 1: Example gather operation. There are four readers who's addresses need to be dereferenced
+                    Figure 1: Example gather operation. There are four readers whose addresses need to be dereferenced
                     in parallel. Note that two of the readers here issue the same address and the data needs to be
                     "multicasted".
                 </figcaption>
             </figure>
             <p>
-                This means that despite significant reductions in weight size, codebook compression methods can be
-                slower than their uncompressed counterparts when implemented with regular CUDA kernels. Since the rest
-                of the <code>matmul</code> procedure is the same, it points to the <u>gather-op bottlenecking the entire
-                    system</u>.
+                The issue is that indices are ~random. We have to assume each thread accesses arbitrary codes and
+                therefore we <u>cannot use coalesced reads</u>. This random access traffic causes <u>bank conflicts</u>
+                and <u>serialization</u>. One solution is duplicating the codebook across shared memory banks, but on
+                GPUs, the number of threads per SM exceeds the number of shared memory banks, and each bank is not large
+                enough to store the entire codebook. In any case, duplication occupies cache space that could have been
+                used otherwise.
             </p>
             <p>
-                For the rest of this article I will assume that the codebook itself is small enough to fit in an on-chip
-                cache. Practically, this assumption holds true. A large codebook will have more bits-per-index too,
-                which defeats the point of compression. This <u>codebook cache</u> is the main focus of this article.
-            </p>
-
-            <h2>Multiporting and Cache Banking</h2>
-            <p>
-                The speed at which gather-ops can be served clearly depends on the number of read-ports of the cache
-                (i.e. a multiported cache). Here, we need to clarify two types of multiporting:
-            <ul>
-                <li>True Multiporting</li>
-                <li>Virtual Multiporting</li>
-            </ul>
+                The problem is far worse on TPU hardware, whose VPU is entirely designed around wide, coalesced loads.
+                Not irregular access or gather/scatter ops.
             </p>
             <p>
-                For true-multiporting, think of multiported SRAMs. There are multiple usable read-ports, no caveats.
-                This would be ideal, but is also the hardest. If we have hundreds of parallel threads, ideally we need
-                hundreds of true-read-ports. <u>A hundred read-port SRAM is not feasible</u>. The area and energy
-                consumption scales unacceptably.
+                The inference speed is therefore limited by the speed of the gather op, and this is well known by
+                authors. The <a
+                    href="https://www.together.ai/blog/even-better-even-faster-quantized-llms-with-qtip#:~:text=This%20means%20that%20the%20entire%20codebook%20must%20fit%20in%20a%20GPU%E2%80%99s%20L1%20cache%20after%20being%20duplicated%2032%20%28NVIDIA%29%20or%2064%20%28AMD%29%20times%20to%20avoid%20bank%20conflicts">QTIP
+                    authors mention duplication</a> being a limiter to codebook size. Similarly, the <a
+                    href="https://arxiv.org/html/2503.02236v2#:~:text=Additionally%2C%20we%20note%20high%20bank%20conflicts%20%283rd%20bar%29%2C%20indicative%20of%20highly%20serialized%20access%20to%20shared%20memory">VQ-LLM
+                    authors measure inefficiency</a> caused by bank conflicts and serialization.
             </p>
             <p>
-                By virtual-multiporting (or VMP), I mean any system that builds a large number from read-ports using
-                caches with a smaller number of read-ports.
-            </p>
-            <p>
-                <u>Banking</u> (or slicing) is the most common VMP solution. But it introduces two problems:
-            <ol>
-                <li>How are the banks' true-ports connected to the virtual-ports? What is the interconnect complexity
-                    when the number of banks and virtual-ports are very high?</li>
-                <li>If many ports want to access the same bank, the requests must be serialized, significantly reducing
-                    throughput.</li>
-            </ol>
-            </p>
-            <p>
-                The design I present in this article builds on standard cache banking, but introduces a mitigation for
-                these two problems.
+                I posit that the only flexible solution to making LLM codebook compression viable is to solve the bank
+                conflict problem with a dedicated cache <u>designed for gather ops</u>. To this end, we should first
+                recap why banking and serialization is needed at all.
             </p>
 
-            <h2>Interconnection Network</h2>
+            <h2>Read-Ports and Banks</h2>
             <p>
-                Following what was introduced in <a href="prereq.html#mins">Prerequisite Concepts</a>, we could consider
-                a crossbar to solve problem 1. But the obstacle is the complexity of the crossbar when we have
-                potentially hundreds of virtual read-ports. A crossbar could be completely infeasible due to <u>long
-                    wires</u> and <u>extreme routing congestion</u>.
+                Every on-chip cache has a certain number of read-ports, determining how many read-requests it can serve
+                at once. It can be seen that the speed of a gather op directly depends on the number of read ports.
             </p>
             <p>
-                We should instead consider Multistage Interconnection Networks (MINs). MINs have $O(log \ N)$
-                complexity,
-                as opposed to crossbars' $O(N^2)$, making it more suitable for hundreds of read-ports.
+                The first issue is that you cannot create SRAMs with a huge number of read-ports because the area and
+                energy <u>scales super-quadratically</u> with port count. 2 or 4 read-ports is as far as you can push it
+                (unless banks are tiny).
             </p>
             <p>
-                However, MINs bring their own set of complexities, mainly that <u>figuring out the switch settings</u>
-                to achieve a desired routing in a MIN is a <u>non-trivial task</u>. Some MINs (like Beneš Networks) are
-                very powerful, but require complex routing algorithms to calculate switch settings, making them
-                impractical for our purpose.
+                Enter: banking. Use multiple SRAMs with few "true" read-ports and attach them with an
+                <u>interconnect</u> to create a larger number of "virtual" read-ports. This interconnect is usually a
+                <u>full crossbar</u>, a kind of network topology that provides a unique path between every virtual port
+                and true port. TODO: diagram
             </p>
             <p>
-                Instead, we will use a class of MINs, known as <u>self-routing MINs</u>, to create the interconnect. In
-                a self-routing MIN, the data packets contain their destination address, and each switch looks at a bit
-                from the address to make its own, entirely <u>local routing decision</u>. No global coordination or
-                complex routing algorithm needed. We simply <u>inject packets</u> at the input, and they <u>find their
-                    own way</u> through the network.
+                But crossbars have similar scaling issues: crossbars have $O(N^2)$ complexity. We cannot have hundreds
+                of read ports because the crossbar interconnect's <u>area and routing complexity would blow up</u>.
+            </p>
+            <p>
+                This explains the mismatch in GPUs: each SM has thousands of resident threads, yet the shared memory has
+                only 32 read-ports (with each bank being single-ported). If we want to feasibly scale the number of
+                virtual ports and speed-up very wide gathers, we have to <u>replace the crossbar</u>.
+            </p>
+
+            <h2>Multistage Interconnection Networks</h2>
+            <p>
+                Multistage Interconnection Networks (MINs) were designed to solve exactly this problem. MINs have even
+                been historically applied to <a
+                    href="https://www.sciencedirect.com/topics/computer-science/multistage-interconnection-network#:~:text=This%20period%20also%20saw%20several%20indirect%20networks%20used%20in%20vector%20and%20array%20processors%20to%20connect%20multiple%20processors%20to%20multiple%20memory%20banks">very
+                    similar use cases</a>. MINs connect sources to destinations using a grid of switches, and some kind
+                of network topology connecting them:
             </p>
             <figure>
                 <img src="img/echo/example_min.svg" title="Diagram of a Multistage Interconnect Network"
                     alt="Diagram of a Multistage Interconnect Network">
                 <figcaption>
-                    Figure 1: General diagram of a Multistage Interconnection Network. There is a grid of switches (the
+                    Figure 3: General diagram of a Multistage Interconnection Network. There is a grid of switches (the
                     opaque boxes) connected via some wiring topology (the dashed boxes), and input/output ports on each
                     side.
                 </figcaption>
             </figure>
+            <p>
+                Each switch is small and only handles routing a few signals. 2x2 is a common switch size, i.e. 2 inputs
+                routed to 2 outputs. Each switch has a <u>switch state</u>, describing what routing decision its making.
+                For example, a 2x2 switch could swap its inputs, or route one input to both outputs, etc. The wiring
+                topology allows for these small switches to handle any number of overall inputs and outputs.
+            </p>
+            <p>
+                The core advantage of MINs is that they typically have $O(N \log N)$ complexity, as opposed to
+                crossbar's $O(N^2)$. This makes MINs attractive to us. If we can connect true ports to virtual ports
+                through a MIN instead of a crossbar, <u>hundreds of virtual ports can become viable</u>.
+            </p>
             <div class="callout aside">
                 <strong>Resources</strong>
                 <p>
                     MINs can be complex to learn and this article is <i>not</i> the right place to learn about them for
-                    the first time. I will again emphasize that readers should read the <a
-                        href="prereq.html#mins">Prerequisite Concepts</a> page, which also includes a list of resources
-                    to learn about MINs.
+                    the first time. The <a href="prereq.html#mins">Prerequisite Concepts</a> page includes a list of
+                    resources to learn about MINs.
                 </p>
             </div>
 
-            <h2>The Echo Cache</h2>
+            <h2>Self-Routing MINs and Blocking</h2>
             <p>
-                This is my solution:
+                The next question is: how are switch states set? To achieve a desired overall routing, each switch must
+                be set appropriately. For most MINs, such as Beneš Networks, we need a <u>central controller</u>, i.e.
+                some algorithm that calculates switch states. The problem is that <u>MIN routing algorithms are
+                    complex</u> in themselves. There is no point in trying to use MINs to speed up gathers, if the
+                routing algorithm computation itself is expensive.
+            </p>
+            <p>
+                We can instead look to <u>self-routing MINs</u>. Instead of a central controller, the packets flowing
+                through the network contain their output addresses, and each switch makes <u>its own, local decision</u>
+                based on some simple rule. You simply inject packets into the MIN, and they find their own way through
+                the network. <a href="https://en.wikipedia.org/wiki/Omega_network">Omega Networks</a> are one of the
+                simplest types of self-routing MINs, where each switch makes a decision based on one bit of the packet
+                address field.
+            </p>
+
+            <h2>The Echo Cache</h2>
+            <p>Our task now is to design a bank $\leftrightarrow$ virtual-port interconnect that:</p>
+            <ul>
+                <li>Uses MINs instead of crossbars</li>
+                <li>Incurs low amount of serialization</li>
+            </ul>
+
+            <p>For this, I present the <b>Echo Cache</b>:</p>
             <ul>
                 <li>Use a self-routing MIN as the interconnect between cache-banks and virtual read-ports</li>
                 <li>In phase 1, make addresses travel across the interconnect, from virtual ports to banks</li>
                 <li>In phase 2, make data travel from banks to virtual ports, tracing the same route the address packets
-                    took in phase 1, except in reverse</li>
+                    took in phase 1, except in <i>reverse</i></li>
             </ul>
-            </p>
             <p>
-                Hence the name, <b>Echo Cache</b>. Addresses travel to banks, data returns back like an echo. And since
+                Hence the name: Echo Cache. Addresses travel to banks, data returns back like an echo. And since
                 a MIN is used instead of a crossbar, it can be feasibly scaled to hundreds of virtual read-ports with
                 feasible wire lengths and routing congestion.
             </p>
             <p>
-                In addition, the switches in the MIN have to be given a "packet merging" capability. This allows the
-                banks to do <u>fan-out data transport</u>, i.e. <u>broadcast</u>. This significantly reduces the amount
-                of serialization that takes place, since if two read-ports want the same address, the data can be
-                replicated in the MIN, and broadcast to all requesting ports. A significant number of read-ports can
-                receive their data in parallel.
+                In addition, the switches in the MIN have to be given a <u>packet merging</u> capability. This allows
+                the banks to do <u>fan-out data transport</u>, i.e. <u>broadcast</u>. This significantly reduces the
+                amount of serialization that takes place, since if two read-ports want the same address, the data can be
+                replicated in the MIN, and broadcast to all requesting ports. A large number of read-ports can receive
+                their data in parallel.
             </p>
             <p>
-                Hence, both problems mentioned in the previous section have been addressed.
+                Hence, both aforementioned requirements are satisfied.
             </p>
 
             <h2>Detailed Explanation</h2>
             <figure>
                 <img src="img/echo/dual_omega_storage.svg" title="Echo Cache Diagram" alt="Echo Cache Diagram">
                 <figcaption>
-                    Figure 1: Overall Architecture of the Echo Cache. Addresses flow down the control network, data
-                    flows up the transfer network.
+                    Figure 4: Overall Architecture of the Echo Cache. There are two self-routing MINs and no central
+                    controller. Addresses flow down the control network, data flows up the transfer network.
                 </figcaption>
             </figure>
             <p>
-                It's best to understand the design as a pair of MINs: the <b>control network</b> and the <b>transfer
+                The design uses a pair of MINs: the <b>control network</b> and the <b>transfer
                     network</b>. Both are self-routing, and switches make their own local decisions. The control network
                 deals with <u>address packets</u> and the transfer network deals with <u>data packets</u>.
             </p>
@@ -179,14 +196,14 @@
             </p>
             <p>
                 The control network essentially only performs a "dry-run", that the transfer network replays in reverse
-                to transport data packets. This retains the advantage of self-routing MINs: no complex routing algorithm
-                needs to be used to compute switch states. The control network <i>is</i> the algorithm.
+                to transport data packets. This retains the advantage of self-routing MINs: no central controller
+                algorithm needs to be used to compute switch states. The control network <i>is</i> the algorithm.
             </p>
             <p>
                 Now, most self-routing MINs have chances of packet collisions or <u>blocking</u>, i.e. when two packets
                 at a switch input want to both go to the same output wire. In this case, one packet must be
-                <u>dropped</u>. However,if both packets are ultimately going to the same bank, then instead of dropping,
-                both packets can be <u>merged</u>.
+                <u>dropped</u>. However, if both packets are ultimately going to the same bank, then instead of
+                dropping, both packets can be <u>merged</u>.
             </p>
             <p>
                 On the way down, packets merge and form a fan-in routing. When reversed, packets <u>replicate</u> and
@@ -196,23 +213,28 @@
             <figure>
                 <img src="img/echo/fanin_fanout.svg" title="Fan-in to Fan-out Diagram" alt="Fan-in to Fan-out Diagram">
                 <figcaption>
-                    Figure 2: Visual example of a fan-in routing becoming a fan-out routing when traced in reverse. This
-                    is what allows the storage-array to "multicast" data to read-ports, reducing serialization.
+                    Figure 5: Visual example of the fan-in control network becoming a fan-out transfer network in
+                    reverse. This is what allows the banks to "multicast" data to read-ports, reducing serialization.
                 </figcaption>
             </figure>
-
             <p>
                 This presents an issue: if some packets are dropped in the control phase, those read ports will never
                 receive their data. To solve this, we include <u>retry logic</u>, that sees which read ports finally
-                receive valid data, and selectively re-issues the rest back into the control network.
+                receive valid data, and selectively re-issues the rest back into the control network:
             </p>
+            <figure>
+                <img src="img/echo/retry_logic.svg" title="Retry Logic Diagram" alt="Retry Logic Diagram">
+                <figcaption>
+                    Figure 6: Illustration of the retry logic. Read-ports that receive invalid packets (due to dropping
+                    in the control network) have their addresses re-issued.
+                </figcaption>
+            </figure>
             <p>
                 This is a form of serialization (hence why I mentioned that serialization is reduced, and not
                 eliminated). However, the probability of blocking depends on the MIN topology chosen. If we use designs
                 like <u>dilated networks</u> or <u>asymptotically nonblocking networks</u>, probability of blocking is
                 reduced, and we have to serialize rarely, maintaining high system throughput.
             </p>
-
             <div class="callout aside">
                 <strong>Are 2 Networks Necessary?</strong>
                 <p>
@@ -226,35 +248,23 @@
                 </p>
             </div>
 
-            <div class="callout aside">
-                <strong>What About the Write-Ports?</strong>
-                <p>
-                    This is designed for gather, not scatter. So we assume that the number of write ports needed is
-                    small, and a regular bus/crossbar connection for the write side of things is feasible. Its only for
-                    the hundreds of read-ports that we need MINs.
-                </p>
-                <p>
-                    In LLM codebook decompression, this tracks. We dereference indices <i>far</i> more frequently than
-                    we load codebooks.
-                </p>
-            </div>
-
+            <h2>Switch States</h2>
             <p>
-                Lets take the example of a MIN topology that uses a grid of 2x2 switches. The following diagrams explain
-                the different states each switch can be in:
+                To better understand the functioning of the Echo Cache, let's take the example of a MIN using 2x2
+                switches. The following diagrams explain the different states each switch can be in:
             </p>
             <figure>
                 <img src="img/echo/switch_states.svg" title="Example States of 2x2 Switch"
                     alt="Example States of 2x2 Switch" style="width: 50%;">
                 <figcaption>
-                    Figure 3: The 4 basic states of a 2x2 switch
+                    Figure 7: The 4 basic states of a 2x2 switch
                 </figcaption>
             </figure>
             <figure>
                 <img src="img/echo/switch_conflict.svg" title="Example Blocking States of a 2x2 Switch"
                     alt="Example Blocking States of a 2x2 Switch" style="width: 50%;">
                 <figcaption>
-                    Figure 4: The 2 additional packet dropping states when there is contention but
+                    Figure 8: The 2 additional packet dropping states when there is contention but
                     packets cannot be merged. We have a static rule here: the left input packet always loses.
                 </figcaption>
             </figure>
@@ -262,7 +272,7 @@
                 <img src="img/echo/switch_bidir.svg" title="Bidirectional Switch Behaviour"
                     alt="Bidirectional Switch Behaviour" style="width: 90%;">
                 <figcaption>
-                    Figure 5: Interpretation of switch behaviour in forward vs reverse directions. Note that the switch
+                    Figure 9: Interpretation of switch behaviour in forward vs reverse directions. Note that the switch
                     becomes asymmetrical when blocking or merging takes place.
                 </figcaption>
             </figure>
@@ -273,21 +283,18 @@
                 <i>reverse</i>, i.e. it will duplicate a data packet, enabling multicast behaviour.
             </p>
 
-            <h2>Verilog Sample</h2>
+            <h2>RTL Model</h2>
             <p>
-                I developed a proof-of-concept RTL implementation of the Echo Cache which <a style="white-space: nowrap"
-                    href="https://github.com/UditDey/pitch_site/blob/main/code/echo">can be
-                    found here</a>. It utilizes $2 \times 2$ switches with the <a
-                    href="https://en.wikipedia.org/wiki/Omega_network">omega network</a> topology, the
-                simplest self-routing MIN.
+                I developed a proof-of-concept RTL implementation of the Echo Cache utilizing 2x2 switches with the
+                Omega Network topology. The full code <a
+                    href="https://github.com/UditDey/pitch_site/blob/main/code/echo/model">can be found here</a>. It
+                proves
+                that the concept works, and the retry logic is sound.
             </p>
             <p>
-                Here, I will present the design of just the switch modules, which should be enough to get a grasp of how
-                the whole system operates. <code>ctrl_switch</code> routes its input packets, and registers its
-                decision. <code>xfer_switch</code> reads the saved the decision, and performs the same operation in
-                reverse.
+                Let's look at the switch modules. This should give an idea of the packets flowing through both networks,
+                and the core logic of the switches:
             </p>
-
             <pre><code class="language-verilog">// ****************** Packet Layouts ******************
 // Address Packet: {valid, addr}                      *
 // Data Packet:    {valid, data}                      *
@@ -409,273 +416,21 @@ module xfer_switch #(
     end
 endmodule</code></pre>
 
-            <br>
+            <h2>PnR Experiments</h2>
             <p>
-                In the omega network topology, layers of switches are connected via the <u>perfect shuffle</u> wiring
-                pattern. Accordingly, when tracing in reverse, the transfer network uses the <u>inverse perfect
-                    shuffle</u>.
+                To show that the Echo Cache is more scalable than crossbars with hundreds of virtual read-ports, let's
+                perform a test PnR implementation on just the core topologies alone, i.e. compare crossbar with Omega
+                Network MIN from a <u>topology-only, pure PnR</u> perspective.
             </p>
-            <pre><code class="language-verilog">module perfect_shuffle #(
-    parameter N         = 8,
-    parameter PKT_WIDTH = 4
-) (
-    input  wire [N*PKT_WIDTH-1:0] in_pkts,
-    output wire [N*PKT_WIDTH-1:0] out_pkts
-);
-    localparam LOG_N = $clog2(N);
-
-    genvar i;
-    generate
-        for (i = 0; i < N; i = i + 1) begin : shuffle
-            localparam integer j = ((i << 1) & (N - 1)) | (i >> (LOG_N - 1));
-
-            assign out_pkts[j*PKT_WIDTH +: PKT_WIDTH] = in_pkts[i*PKT_WIDTH +: PKT_WIDTH];
-        end
-    endgenerate
-endmodule
-
-
-module inverse_perfect_shuffle #(
-    parameter N         = 8,
-    parameter PKT_WIDTH = 4
-) (
-    input  wire [N*PKT_WIDTH-1:0] in_pkts,
-    output wire [N*PKT_WIDTH-1:0] out_pkts
-);
-    localparam LOG_N = $clog2(N);
-
-    genvar i;
-    generate
-        for (i = 0; i < N; i = i + 1) begin : unshuffle
-            localparam integer j = (i >> 1) | ((i & 1) << (LOG_N - 1));
-
-            assign out_pkts[j*PKT_WIDTH +: PKT_WIDTH] = in_pkts[i*PKT_WIDTH +: PKT_WIDTH];
-        end
-    endgenerate
-endmodule</code></pre>
-
-            <br>
-            <p>Finally, the network modules can be formed like so:</p>
-            <pre><code class="language-verilog">module ctrl_layer #(
-    parameter N          = 8,
-    parameter ADDR_WIDTH = 3,
-    parameter STAGE_BIT  = 0
-) (
-    input  wire clk,
-    input  wire rst,
-    input  wire [N*(ADDR_WIDTH+1)-1:0] in_pkts,
-    output wire [N*(ADDR_WIDTH+1)-1:0] out_pkts,
-    output wire [(N/2)-1:0]            did_swaps,
-    output wire [(N/2)-1:0]            did_merges
-);
-    localparam PKT_WIDTH = ADDR_WIDTH + 1;
-
-    genvar i;
-    generate
-        wire [N*PKT_WIDTH-1:0] sh_pkts;
-
-        perfect_shuffle #(
-            .N(N),
-            .PKT_WIDTH(PKT_WIDTH)
-        ) shuffle (
-            .in_pkts(in_pkts),
-            .out_pkts(sh_pkts)
-        );
-
-        for (i = 0; i < N/2; i = i + 1) begin : sw        
-            ctrl_switch #(
-                .ADDR_WIDTH(ADDR_WIDTH),
-                .STAGE_BIT(STAGE_BIT)
-            ) switch (
-                .clk(clk),
-                .rst(rst),
-                .in0 (sh_pkts [(2*i  ) * PKT_WIDTH +: PKT_WIDTH]),
-                .in1 (sh_pkts [(2*i+1) * PKT_WIDTH +: PKT_WIDTH]),
-                .out0(out_pkts[(2*i  ) * PKT_WIDTH +: PKT_WIDTH]),
-                .out1(out_pkts[(2*i+1) * PKT_WIDTH +: PKT_WIDTH]),
-                .did_swap(did_swaps[i]),
-                .did_merge(did_merges[i])
-            );
-        end
-    endgenerate
-endmodule
-
-
-module xfer_layer #(
-    parameter N          = 8,
-    parameter DATA_WIDTH = 3,
-    parameter STAGE_BIT  = 0
-) (
-    input  wire clk,
-    input  wire rst,
-    input  wire [N*(DATA_WIDTH+1)-1:0] in_pkts,
-    input  wire [(N/2)-1:0]            did_swaps,
-    input  wire [(N/2)-1:0]            did_merges,
-    output wire [N*(DATA_WIDTH+1)-1:0] out_pkts
-);
-    localparam PKT_WIDTH = DATA_WIDTH + 1;
-
-    genvar i;
-    generate
-        wire [N*PKT_WIDTH-1:0] tmp_pkts;
-
-        for (i = 0; i < N/2; i = i + 1) begin : sw        
-            xfer_switch #(
-                .DATA_WIDTH(DATA_WIDTH),
-                .STAGE_BIT(STAGE_BIT)
-            ) switch (
-                .clk(clk),
-                .rst(rst),
-                .in0 (in_pkts [(2*i  ) * PKT_WIDTH +: PKT_WIDTH]),
-                .in1 (in_pkts [(2*i+1) * PKT_WIDTH +: PKT_WIDTH]),
-                .did_swap(did_swaps[i]),
-                .did_merge(did_merges[i]),
-                .out0(tmp_pkts[(2*i  ) * PKT_WIDTH +: PKT_WIDTH]),
-                .out1(tmp_pkts[(2*i+1) * PKT_WIDTH +: PKT_WIDTH])
-            );
-        end
-
-        inverse_perfect_shuffle #(
-            .N(N),
-            .PKT_WIDTH(PKT_WIDTH)
-        ) shuffle (
-            .in_pkts(tmp_pkts),
-            .out_pkts(out_pkts)
-        );
-    endgenerate
-endmodule
-
-
-module ctrl_network #(
-    parameter N = 8
-) (
-    input  wire                   clk,
-    input  wire                   rst,
-    input  wire [N-1:0]           req_valids,
-    input  wire [N*$clog2(N)-1:0] addrs,
-    output wire [N*($clog2(N)+1)-1:0]     out_pkts,
-    output wire [((N/2) * $clog2(N))-1:0] did_swaps,
-    output wire [((N/2) * $clog2(N))-1:0] did_merges
-);
-    localparam ADDR_WIDTH = $clog2(N);
-    localparam NUM_STAGES = $clog2(N);
-    localparam PKT_WIDTH  = ADDR_WIDTH + 1;
-
-    // Expand addresses into packets: {valid, addr}
-    wire [N*PKT_WIDTH-1:0] in_pkts;
-    genvar p;
-    generate
-        for (p = 0; p < N; p = p + 1) begin : expand
-            // Use the external valid signal instead of hardcoded 1'b1
-            assign in_pkts[p*PKT_WIDTH +: PKT_WIDTH] = 
-                {req_valids[p], addrs[p*ADDR_WIDTH +: ADDR_WIDTH]};
-        end
-    endgenerate
-
-    // Inter-stage packet wires
-    wire [N*PKT_WIDTH-1:0] stage_pkts [0:NUM_STAGES];
-    assign stage_pkts[0] = in_pkts;
-
-    // Instantiate stages (MSB routed first)
-    genvar s;
-    generate
-        for (s = 0; s < NUM_STAGES; s = s + 1) begin : stage
-            ctrl_layer #(
-                .N(N),
-                .ADDR_WIDTH(ADDR_WIDTH),
-                .STAGE_BIT(ADDR_WIDTH - 1 - s)
-            ) layer (
-                .clk(clk),
-                .rst(rst),
-                .in_pkts(stage_pkts[s]),
-                .out_pkts(stage_pkts[s+1]),
-                .did_swaps(did_swaps[s*(N/2) +: (N/2)]),
-                .did_merges(did_merges[s*(N/2) +: (N/2)])
-            );
-        end
-    endgenerate
-
-    assign out_pkts = stage_pkts[NUM_STAGES];
-endmodule
-
-
-module xfer_network #(
-    parameter N          = 8,
-    parameter DATA_WIDTH = 16
-) (
-    input  wire                           clk,
-    input  wire                           rst,
-    input  wire [N*DATA_WIDTH-1:0]        tap_ports,
-    input  wire [N*($clog2(N)+1)-1:0]     ctrl_out_pkts,
-    input  wire [((N/2) * $clog2(N))-1:0] did_swaps,
-    input  wire [((N/2) * $clog2(N))-1:0] did_merges,
-    output wire [N*(DATA_WIDTH+1)-1:0]    out_pkts
-);
-    localparam ADDR_WIDTH  = $clog2(N);
-    localparam NUM_STAGES  = $clog2(N);
-    localparam CTRL_PKT_WIDTH = ADDR_WIDTH + 1;
-    localparam PKT_WIDTH   = DATA_WIDTH + 1;
-
-    // Expand tap_ports into packets, using ctrl_out valid bits
-    wire [N*PKT_WIDTH-1:0] in_pkts;
-    genvar p;
-    generate
-        for (p = 0; p < N; p = p + 1) begin : expand
-            wire ctrl_valid = ctrl_out_pkts[(p+1)*CTRL_PKT_WIDTH - 1];
-            assign in_pkts[p*PKT_WIDTH +: PKT_WIDTH] = 
-                ctrl_valid ? {1'b1, tap_ports[p*DATA_WIDTH +: DATA_WIDTH]}
-                           : {PKT_WIDTH{1'b0}};
-        end
-    endgenerate
-
-    // Inter-stage packet wires
-    wire [N*PKT_WIDTH-1:0] stage_pkts [0:NUM_STAGES];
-    assign stage_pkts[0] = in_pkts;
-
-    // Instantiate stages in reverse order
-    genvar s;
-    generate
-        for (s = 0; s < NUM_STAGES; s = s + 1) begin : stage
-            localparam CTRL_STAGE = NUM_STAGES - 1 - s;
-            
-            xfer_layer #(
-                .N(N),
-                .DATA_WIDTH(DATA_WIDTH),
-                .STAGE_BIT(s)
-            ) layer (
-                .clk(clk),
-                .rst(rst),
-                .in_pkts(stage_pkts[s]),
-                .out_pkts(stage_pkts[s+1]),
-                .did_swaps(did_swaps[CTRL_STAGE*(N/2) +: (N/2)]),
-                .did_merges(did_merges[CTRL_STAGE*(N/2) +: (N/2)])
-            );
-        end
-    endgenerate
-
-    assign out_pkts = stage_pkts[NUM_STAGES];
-endmodule</code></pre>
+            <p>The RTL for this test <a>can be found here.</a></p>
+            <p>
+                The topology-only RTL was implemented on the <a
+                    href="https://skywater-pdk.readthedocs.io/en/main/">SKY130</a> process using <a
+                    href="https://www.siliconcompiler.com/">SiliconCompiler</a>. TODO: Results
+            </p>
 
             <h2>Conclusion</h2>
-            <p>
-                In this article I presented the <b>Echo Cache</b>: a banked, virtual-multiported cache that uses a novel
-                2 phase MIN to route addresses to banks, and then data back to read-ports.
-            </p>
-            <p>
-                Instead of typical crossbars, I propose using MINs, which have $O(log \ N)$ complexity, as
-                opposed to crossbars' $O(N^2)$. The use of MINs allows for a very large number of virtual read-ports,
-                without scalability issues.
-            </p>
-            <p>
-                The motivations for this are the wide gather operations that we encounter in LLM codebook compression.
-                Codebook compression is a powerful idea that has been unfortunately bottlenecked by existing cache
-                designs, and I hope that next-gen AI inference hardware can solve this problem at a hardware level using
-                approaches like the Echo Cache.
-            </p>
-            <p>
-                My <a href="ccpo.html">next article</a> further builds on LLM codebook compression, showing that
-                reduction in model quality incurred can be mitigated by "patching"-in salient, outlier weights.
-            </p>
+
         </div>
     </main>
 

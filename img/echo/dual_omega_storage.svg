@@ -313,7 +313,7 @@
   <path class="arrow-line" d="M1040,270 L1040,580"/>
   <polygon class="arrowhead" points="1040,585 1030,565 1050,565"/>
   <rect class="storage-box" x="185" y="605" width="320" height="60" rx="4"/>
-  <text class="title-label" x="345.0" y="641.0" text-anchor="middle">Storage Array</text>
+  <text class="title-label" x="345.0" y="641.0" text-anchor="middle">SRAM Banks</text>
   <g id="storage-connections">
     <path class="line" d="M210,580 L210,605"/>
     <path class="line" d="M240,580 L240,605"/>
