@@ -80,8 +80,17 @@
                 Enter: banking. Use multiple SRAMs with few "true" read-ports and attach them with an
                 <u>interconnect</u> to create a larger number of "virtual" read-ports. This interconnect is usually a
                 <u>full crossbar</u>, a kind of network topology that provides a unique path between every virtual port
-                and true port. TODO: diagram
+                and true port.
             </p>
+            <figure>
+                <img src="img/echo/crossbar.png" title="Banks connected via a crossbar"
+                    alt="Banks connected via a crossbar">
+                <figcaption>
+                    Figure 3: Illustration of banking with a crossbar interconnect. Taken from <a
+                        href="https://ece752.ece.wisc.edu/lect14-advanced-caches.pdf">these slides</a> on multiported
+                    caches.
+                </figcaption>
+            </figure>
             <p>
                 But crossbars have similar scaling issues: crossbars have $O(N^2)$ complexity. We cannot have hundreds
                 of read ports because the crossbar interconnect's <u>area and routing complexity would blow up</u>.
@@ -129,7 +138,7 @@
                 </p>
             </div>
 
-            <h2>Self-Routing MINs and Blocking</h2>
+            <h2>Self-Routing MINs</h2>
             <p>
                 The next question is: how are switch states set? To achieve a desired overall routing, each switch must
                 be set appropriately. For most MINs, such as Beneš Networks, we need a <u>central controller</u>, i.e.
@@ -283,7 +292,7 @@
                 <i>reverse</i>, i.e. it will duplicate a data packet, enabling multicast behaviour.
             </p>
 
-            <h2>RTL Model</h2>
+            <h2>RTL Functional Model</h2>
             <p>
                 I developed a proof-of-concept RTL implementation of the Echo Cache utilizing 2x2 switches with the
                 Omega Network topology. The full code <a
@@ -416,7 +425,7 @@ module xfer_switch #(
     end
 endmodule</code></pre>
 
-            <h2>PnR Experiments</h2>
+            <h2>Topology PnR Experiments</h2>
             <p>
                 To show that the Echo Cache is more scalable than crossbars with hundreds of virtual read-ports, let's
                 perform a test PnR implementation on just the core topologies alone, i.e. compare crossbar with Omega
@@ -454,7 +463,7 @@ endmodule</code></pre>
                 crossbar grid, and the echo RTL implements two omega networks. Both have the same top level pins,
                 similar pin placement constraints, and both use simple <code>mux2</code> switches.
             </p>
-            <table class="metrics-table">
+            <table>
                 <thead>
                     <tr>
                         <th>Metric</th>

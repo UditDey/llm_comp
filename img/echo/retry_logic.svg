@@ -18,8 +18,8 @@
   <text class="label" x="789.0" y="65" text-anchor="middle">Addresses</text>
   <rect class="outer-box" x="50" y="80" width="476" height="60" rx="8" fill="rgba(180, 210, 255, 0.5)"/>
   <rect class="outer-box" x="551" y="80" width="476" height="60" rx="8" fill="rgba(255, 200, 180, 0.5)"/>
-  <path class="connect-arrow" d="M511,77 Q538.5,55 566,77"/>
-  <polygon class="arrowhead" points="566,77 561,69 571,69"/>
+  <path class="connect-arrow" d="M486,72 Q538.5,40 591,72"/>
+  <polygon class="arrowhead" points="0,0 -8,-5 -8,5" transform="translate(591,72) rotate(31.36330221395006)"/>
   <g id="bits-box">
     <rect class="cell cell-normal" x="60" y="90" width="50" height="40" rx="4"/>
     <text class="text-normal" x="85.0" y="115.0" text-anchor="middle">1</text>

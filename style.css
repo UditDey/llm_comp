@@ -34,7 +34,7 @@
     --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
     --font-serif: 'Source Serif 4', Georgia, serif;
 
-    --content-width: 770px;
+    --content-width: 790px;
     --spacing-unit: 1.5rem;
 }
 
@@ -433,7 +433,6 @@ table {
     background: transparent;
     border: 1px solid var(--color-border);
     font-size: 0.98rem;
-    table-layout: fixed;
 }
 
 /* Gridlines + roomier rows */
@@ -452,30 +451,6 @@ thead th {
     font-family: var(--font-sans);
     font-weight: 600;
     background: var(--color-bg-alt);
-}
-
-/* Default 3-column proportions (narrower Name column) */
-table th:nth-child(1),
-table td:nth-child(1) {
-    width: 30%;
-}
-
-table th:nth-child(2),
-table td:nth-child(2) {
-    width: 52%;
-}
-
-table th:nth-child(3),
-table td:nth-child(3) {
-    width: 18%;
-}
-
-/* Center Formula + Value columns */
-table th:nth-child(2),
-table td:nth-child(2),
-table th:nth-child(3),
-table td:nth-child(3) {
-    text-align: center;
 }
 
 /* KaTeX inside tables */
