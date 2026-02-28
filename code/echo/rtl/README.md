@@ -27,3 +27,9 @@ Self-checking testbench for the Echo Cache. Tests the following scenarios:
 3. Broadcast
 4. Conflict pattern (tests packet dropping and retry logic)
 5. Back to back requests (tests backpressure)
+
+The RTL was tested using Icarus Verilog:
+```
+iverilog tb_echo_cache.v
+./a.out
+```
