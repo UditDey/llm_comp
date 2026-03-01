@@ -78,10 +78,6 @@
 </head>
 
 <body>
-
-    <h1>Echo Cache — Packet Flow</h1>
-    <p class="subtitle">Addresses: [5, 2, 4, 3, 1, 6, 0, 7] · N = 8 · Omega topology</p>
-
     <div id="viz-container">
         <svg id="echo-svg" viewBox="0 0 880 390" xmlns="http://www.w3.org/2000/svg">
             <style>
@@ -352,7 +348,7 @@
             <!-- ==================== Copy States Arrow ==================== -->
             <g id="copy-arrow" style="display:none">
                 <path d="M510,195 L370,195" stroke="#000" stroke-width="2.5" fill="none" marker-end="url(#arrowhead)" />
-                <text class="arrow-label" x="440" y="185" text-anchor="middle">Switch States</text>
+                <text class="arrow-label" x="440" y="185" text-anchor="middle">Copy States</text>
             </g>
             <defs>
                 <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
@@ -477,7 +473,7 @@
             function getCurves(boxes, s, sw, topToBot) {
                 const box = boxes[s][sw];
                 const lx = box.x + SW_W / 4, rx = box.x + 3 * SW_W / 4;
-                const t = box.y + 5, b = box.y + SW_H - 5;
+                const t = box.y, b = box.y + SW_H;
                 const [fromY, toY] = topToBot ? [t, b] : [b, t];
                 if (swStates[s][sw] === 'swap')
                     return { upper: makeBez(lx, fromY, rx, toY), lower: makeBez(rx, fromY, lx, toY) };
@@ -501,8 +497,8 @@
                             if (pk < 0) continue;
                             const p = document.createElementNS(SVG_NS, "path");
                             p.setAttribute("d", bezD(cv)); p.setAttribute("fill", "none");
-                            p.setAttribute("stroke", COLORS[pk]); p.setAttribute("stroke-width", "3.5");
-                            p.setAttribute("stroke-linecap", "round"); p.setAttribute("opacity", "0.6");
+                            p.setAttribute("stroke", "#999"); p.setAttribute("stroke-width", "1.3");
+                            p.setAttribute("stroke-linecap", "round");
                             g.appendChild(p);
                         }
                     }
@@ -599,7 +595,7 @@
                 for (let i = 0; i < N; i++) {
                     const g = document.createElementNS(SVG_NS, "g"); g.style.display = "none";
                     const c = document.createElementNS(SVG_NS, "circle");
-                    c.setAttribute("r", "8"); c.setAttribute("fill", COLORS[i]);
+                    c.setAttribute("r", "10"); c.setAttribute("fill", COLORS[i]);
                     c.setAttribute("stroke", "#fff"); c.setAttribute("stroke-width", "1.5");
                     g.appendChild(c);
                     const lb = document.createElementNS(SVG_NS, "text");
@@ -620,16 +616,16 @@
             function ease(t) { return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; }
 
             // ── Timing ──
-            const SD = 700, SP = 300, NS = 5;
+            const SD = 300, SP = 110, NS = 5;
             const FLOW = NS * SD + (NS - 1) * SP;
-            const P0 = 600;                    // initial pause
+            const P0 = 20;                    // initial pause
             const P1 = FLOW;                   // control flow
-            const P2 = 500;                    // pause at ctrl output
+            const P2 = 600;                    // pause at ctrl output
             const P3 = 800;                    // copy states
-            const P4 = 400;                    // pause before transfer
+            const P4 = 20;                    // pause before transfer
             const P5 = FLOW;                   // transfer flow
-            const P6 = 800;                    // final hold
-            const P7 = 500;                    // reset
+            const P6 = 950;                    // final hold
+            const P7 = 200;                    // reset
             const PHASES = [P0, P1, P2, P3, P4, P5, P6, P7];
             const TOTAL = PHASES.reduce((a, b) => a + b, 0);
 

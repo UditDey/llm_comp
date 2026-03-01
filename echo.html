@@ -86,7 +86,7 @@
                 <img src="img/echo/crossbar.png" title="Banks connected via a crossbar"
                     alt="Banks connected via a crossbar">
                 <figcaption>
-                    Figure 2: Illustration of banking with a crossbar interconnect. Taken from <a
+                    Figure 2: Illustration of cache banking with a crossbar interconnect. Taken from <a
                         href="https://ece752.ece.wisc.edu/lect14-advanced-caches.pdf">these slides</a> on multiported
                     memories.
                 </figcaption>
@@ -228,9 +228,13 @@
                 </figcaption>
             </figure>
             <figure>
-                <iframe src="img/echo/animation.html" title="Echo Cache Animation" width="100%" height="500"
+                <iframe src="img/echo/animation.html" title="Echo Cache Animation" width="100%" height="340"
                     style="border:0; display:block;" loading="lazy"></iframe>
-                <figcaption>Figure 6: Echo Cache animation</figcaption>
+                <figcaption>
+                    Figure 6: Animation of the Echo Cache. As addresses flow down the control network, switches
+                    make local routing decisions. Those decisions are copied to the transfer network and played in
+                    reverse.
+                </figcaption>
             </figure>
             <p>
                 This presents an issue: if some packets are dropped in the control phase, those read-ports will never
