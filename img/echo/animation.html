@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Echo Cache Visualization</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html,
+        body {
+            height: 100%;
+        }
+
+        body {
+            background: #f5f5f0;
+            font-family: system-ui, -apple-system, sans-serif;
+
+            /* Layout: full-width page, centered content without shrink-wrapping */
+            display: flex;
+            flex-direction: column;
+            align-items: stretch;
+            /* IMPORTANT: do NOT use center here */
+            justify-content: flex-start;
+
+            /* Prevent iframe scrollbars */
+            overflow: hidden;
+        }
+
+        h1 {
+            font-size: 1.4rem;
+            color: #222;
+            margin: 24px 0 8px;
+            letter-spacing: -0.02em;
+            text-align: center;
+        }
+
+        .subtitle {
+            font-size: 0.85rem;
+            color: #666;
+            margin-bottom: 16px;
+            text-align: center;
+        }
+
+        #viz-container {
+            width: min(1200px, 100%);
+            /* grows with iframe width */
+            margin: 0 auto;
+            /* centered */
+            background: #fff;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 16px;
+            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+        }
+
+        /* Make the SVG scale like an <img> */
+        #echo-svg {
+            display: block;
+            width: 100%;
+            height: auto;
+        }
+
+        #phase-label {
+            text-align: center;
+            margin-top: 12px;
+            font-size: 0.9rem;
+            color: #444;
+            font-weight: 500;
+            min-height: 1.4em;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h1>Echo Cache — Packet Flow</h1>
+    <p class="subtitle">Addresses: [5, 2, 4, 3, 1, 6, 0, 7] · N = 8 · Omega topology</p>
+
+    <div id="viz-container">
+        <svg id="echo-svg" viewBox="0 0 880 390" xmlns="http://www.w3.org/2000/svg">
+            <style>
+                .boundary {
+                    fill: none;
+                    stroke: #000;
+                    stroke-width: 1.2;
+                }
+
+                .switch {
+                    fill: none;
+                    stroke: #000;
+                    stroke-width: 1;
+                }
+
+                .line {
+                    fill: none;
+                    stroke: #000;
+                    stroke-width: 0.8;
+                }
+
+                .node {
+                    fill: #000;
+                }
+
+                .shuffle-region {
+                    fill: none;
+                    stroke: #555;
+                    stroke-width: 1;
+                    stroke-dasharray: 6, 3;
+                }
+
+                .net-label {
+                    font-family: system-ui, -apple-system, sans-serif;
+                    font-size: 16px;
+                    fill: #000;
+                    font-weight: bold;
+                }
+
+                .packet-label {
+                    font-family: 'SF Mono', 'Consolas', monospace;
+                    font-size: 9px;
+                    fill: #fff;
+                    font-weight: bold;
+                    pointer-events: none;
+                }
+
+                .arrow-label {
+                    font-family: system-ui, -apple-system, sans-serif;
+                    font-size: 13px;
+                    fill: #000;
+                    font-weight: bold;
+                }
+            </style>
+
+            <!-- ==================== TRANSFER NETWORK (left) ==================== -->
+            <rect x="40" y="40" width="320" height="310" rx="6" fill="rgba(180, 210, 255, 0.35)" stroke="none" />
+            <rect class="boundary" x="40" y="40" width="320" height="310" rx="6" />
+            <text class="net-label" x="200" y="28" text-anchor="middle">Transfer Network</text>
+
+            <g id="l-inputs">
+                <circle class="node" cx="65" cy="40" r="4" />
+                <circle class="node" cx="95" cy="40" r="4" />
+                <circle class="node" cx="145" cy="40" r="4" />
+                <circle class="node" cx="175" cy="40" r="4" />
+                <circle class="node" cx="225" cy="40" r="4" />
+                <circle class="node" cx="255" cy="40" r="4" />
+                <circle class="node" cx="305" cy="40" r="4" />
+                <circle class="node" cx="335" cy="40" r="4" />
+            </g>
+            <g opacity="0.4">
+                <path class="line" d="M65,44 L65,80" />
+                <path class="line" d="M95,44 L95,80" />
+                <path class="line" d="M145,44 L145,80" />
+                <path class="line" d="M175,44 L175,80" />
+                <path class="line" d="M225,44 L225,80" />
+                <path class="line" d="M255,44 L255,80" />
+                <path class="line" d="M305,44 L305,80" />
+                <path class="line" d="M335,44 L335,80" />
+            </g>
+            <g opacity="0.4">
+                <rect class="switch" x="50" y="80" width="60" height="40" rx="4" />
+                <rect class="switch" x="130" y="80" width="60" height="40" rx="4" />
+                <rect class="switch" x="210" y="80" width="60" height="40" rx="4" />
+                <rect class="switch" x="290" y="80" width="60" height="40" rx="4" />
+            </g>
+            <g opacity="0.4">
+                <path class="line" d="M65,120 L65,135" />
+                <path class="line" d="M95,120 L95,135" />
+                <path class="line" d="M145,120 L145,135" />
+                <path class="line" d="M175,120 L175,135" />
+                <path class="line" d="M225,120 L225,135" />
+                <path class="line" d="M255,120 L255,135" />
+                <path class="line" d="M305,120 L305,135" />
+                <path class="line" d="M335,120 L335,135" />
+            </g>
+            <rect class="shuffle-region" x="50" y="135" width="300" height="25" rx="4" />
+            <g opacity="0.4">
+                <path class="line" d="M65,160 L65,175" />
+                <path class="line" d="M95,160 L95,175" />
+                <path class="line" d="M145,160 L145,175" />
+                <path class="line" d="M175,160 L175,175" />
+                <path class="line" d="M225,160 L225,175" />
+                <path class="line" d="M255,160 L255,175" />
+                <path class="line" d="M305,160 L305,175" />
+                <path class="line" d="M335,160 L335,175" />
+            </g>
+            <g opacity="0.4">
+                <rect class="switch" x="50" y="175" width="60" height="40" rx="4" />
+                <rect class="switch" x="130" y="175" width="60" height="40" rx="4" />
+                <rect class="switch" x="210" y="175" width="60" height="40" rx="4" />
+                <rect class="switch" x="290" y="175" width="60" height="40" rx="4" />
+            </g>
+            <g opacity="0.4">
+                <path class="line" d="M65,215 L65,230" />
+                <path class="line" d="M95,215 L95,230" />
+                <path class="line" d="M145,215 L145,230" />
+                <path class="line" d="M175,215 L175,230" />
+                <path class="line" d="M225,215 L225,230" />
+                <path class="line" d="M255,215 L255,230" />
+                <path class="line" d="M305,215 L305,230" />
+                <path class="line" d="M335,215 L335,230" />
+            </g>
+            <rect class="shuffle-region" x="50" y="230" width="300" height="25" rx="4" />
+            <g opacity="0.4">
+                <path class="line" d="M65,255 L65,270" />
+                <path class="line" d="M95,255 L95,270" />
+                <path class="line" d="M145,255 L145,270" />
+                <path class="line" d="M175,255 L175,270" />
+                <path class="line" d="M225,255 L225,270" />
+                <path class="line" d="M255,255 L255,270" />
+                <path class="line" d="M305,255 L305,270" />
+                <path class="line" d="M335,255 L335,270" />
+            </g>
+            <g opacity="0.4">
+                <rect class="switch" x="50" y="270" width="60" height="40" rx="4" />
+                <rect class="switch" x="130" y="270" width="60" height="40" rx="4" />
+                <rect class="switch" x="210" y="270" width="60" height="40" rx="4" />
+                <rect class="switch" x="290" y="270" width="60" height="40" rx="4" />
+            </g>
+            <g opacity="0.4">
+                <path class="line" d="M65,310 L65,346" />
+                <path class="line" d="M95,310 L95,346" />
+                <path class="line" d="M145,310 L145,346" />
+                <path class="line" d="M175,310 L175,346" />
+                <path class="line" d="M225,310 L225,346" />
+                <path class="line" d="M255,310 L255,346" />
+                <path class="line" d="M305,310 L305,346" />
+                <path class="line" d="M335,310 L335,346" />
+            </g>
+            <g id="l-outputs">
+                <circle class="node" cx="65" cy="350" r="4" />
+                <circle class="node" cx="95" cy="350" r="4" />
+                <circle class="node" cx="145" cy="350" r="4" />
+                <circle class="node" cx="175" cy="350" r="4" />
+                <circle class="node" cx="225" cy="350" r="4" />
+                <circle class="node" cx="255" cy="350" r="4" />
+                <circle class="node" cx="305" cy="350" r="4" />
+                <circle class="node" cx="335" cy="350" r="4" />
+            </g>
+
+            <!-- ==================== CONTROL NETWORK (right) ==================== -->
+            <rect x="520" y="40" width="320" height="310" rx="6" fill="rgba(255, 200, 180, 0.35)" stroke="none" />
+            <rect class="boundary" x="520" y="40" width="320" height="310" rx="6" />
+            <text class="net-label" x="680" y="28" text-anchor="middle">Control Network</text>
+
+            <g id="r-inputs">
+                <circle class="node" cx="545" cy="40" r="4" />
+                <circle class="node" cx="575" cy="40" r="4" />
+                <circle class="node" cx="625" cy="40" r="4" />
+                <circle class="node" cx="655" cy="40" r="4" />
+                <circle class="node" cx="705" cy="40" r="4" />
+                <circle class="node" cx="735" cy="40" r="4" />
+                <circle class="node" cx="785" cy="40" r="4" />
+                <circle class="node" cx="815" cy="40" r="4" />
+            </g>
+            <g opacity="0.4">
+                <path class="line" d="M545,44 L545,80" />
+                <path class="line" d="M575,44 L575,80" />
+                <path class="line" d="M625,44 L625,80" />
+                <path class="line" d="M655,44 L655,80" />
+                <path class="line" d="M705,44 L705,80" />
+                <path class="line" d="M735,44 L735,80" />
+                <path class="line" d="M785,44 L785,80" />
+                <path class="line" d="M815,44 L815,80" />
+            </g>
+            <g opacity="0.4">
+                <rect class="switch" x="530" y="80" width="60" height="40" rx="4" />
+                <rect class="switch" x="610" y="80" width="60" height="40" rx="4" />
+                <rect class="switch" x="690" y="80" width="60" height="40" rx="4" />
+                <rect class="switch" x="770" y="80" width="60" height="40" rx="4" />
+            </g>
+            <g opacity="0.4">
+                <path class="line" d="M545,120 L545,135" />
+                <path class="line" d="M575,120 L575,135" />
+                <path class="line" d="M625,120 L625,135" />
+                <path class="line" d="M655,120 L655,135" />
+                <path class="line" d="M705,120 L705,135" />
+                <path class="line" d="M735,120 L735,135" />
+                <path class="line" d="M785,120 L785,135" />
+                <path class="line" d="M815,120 L815,135" />
+            </g>
+            <rect class="shuffle-region" x="530" y="135" width="300" height="25" rx="4" />
+            <g opacity="0.4">
+                <path class="line" d="M545,160 L545,175" />
+                <path class="line" d="M575,160 L575,175" />
+                <path class="line" d="M625,160 L625,175" />
+                <path class="line" d="M655,160 L655,175" />
+                <path class="line" d="M705,160 L705,175" />
+                <path class="line" d="M735,160 L735,175" />
+                <path class="line" d="M785,160 L785,175" />
+                <path class="line" d="M815,160 L815,175" />
+            </g>
+            <g opacity="0.4">
+                <rect class="switch" x="530" y="175" width="60" height="40" rx="4" />
+                <rect class="switch" x="610" y="175" width="60" height="40" rx="4" />
+                <rect class="switch" x="690" y="175" width="60" height="40" rx="4" />
+                <rect class="switch" x="770" y="175" width="60" height="40" rx="4" />
+            </g>
+            <g opacity="0.4">
+                <path class="line" d="M545,215 L545,230" />
+                <path class="line" d="M575,215 L575,230" />
+                <path class="line" d="M625,215 L625,230" />
+                <path class="line" d="M655,215 L655,230" />
+                <path class="line" d="M705,215 L705,230" />
+                <path class="line" d="M735,215 L735,230" />
+                <path class="line" d="M785,215 L785,230" />
+                <path class="line" d="M815,215 L815,230" />
+            </g>
+            <rect class="shuffle-region" x="530" y="230" width="300" height="25" rx="4" />
+            <g opacity="0.4">
+                <path class="line" d="M545,255 L545,270" />
+                <path class="line" d="M575,255 L575,270" />
+                <path class="line" d="M625,255 L625,270" />
+                <path class="line" d="M655,255 L655,270" />
+                <path class="line" d="M705,255 L705,270" />
+                <path class="line" d="M735,255 L735,270" />
+                <path class="line" d="M785,255 L785,270" />
+                <path class="line" d="M815,255 L815,270" />
+            </g>
+            <g opacity="0.4">
+                <rect class="switch" x="530" y="270" width="60" height="40" rx="4" />
+                <rect class="switch" x="610" y="270" width="60" height="40" rx="4" />
+                <rect class="switch" x="690" y="270" width="60" height="40" rx="4" />
+                <rect class="switch" x="770" y="270" width="60" height="40" rx="4" />
+            </g>
+            <g opacity="0.4">
+                <path class="line" d="M545,310 L545,346" />
+                <path class="line" d="M575,310 L575,346" />
+                <path class="line" d="M625,310 L625,346" />
+                <path class="line" d="M655,310 L655,346" />
+                <path class="line" d="M705,310 L705,346" />
+                <path class="line" d="M735,310 L735,346" />
+                <path class="line" d="M785,310 L785,346" />
+                <path class="line" d="M815,310 L815,346" />
+            </g>
+            <g id="r-outputs">
+                <circle class="node" cx="545" cy="350" r="4" />
+                <circle class="node" cx="575" cy="350" r="4" />
+                <circle class="node" cx="625" cy="350" r="4" />
+                <circle class="node" cx="655" cy="350" r="4" />
+                <circle class="node" cx="705" cy="350" r="4" />
+                <circle class="node" cx="735" cy="350" r="4" />
+                <circle class="node" cx="785" cy="350" r="4" />
+                <circle class="node" cx="815" cy="350" r="4" />
+            </g>
+
+            <!-- ==================== Copy States Arrow ==================== -->
+            <g id="copy-arrow" style="display:none">
+                <path d="M510,195 L370,195" stroke="#000" stroke-width="2.5" fill="none" marker-end="url(#arrowhead)" />
+                <text class="arrow-label" x="440" y="185" text-anchor="middle">Switch States</text>
+            </g>
+            <defs>
+                <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+                    <polygon points="0 0, 8 3, 0 6" fill="#000" />
+                </marker>
+            </defs>
+
+            <!-- ==================== Dynamic layers ==================== -->
+            <g id="ctrl-curves"></g>
+            <g id="xfer-curves"></g>
+            <g id="ctrl-packets"></g>
+            <g id="xfer-packets"></g>
+        </svg>
+    </div>
+
+    <div id="phase-label"></div>
+
+    <script>
+        (() => {
+            const SVG_NS = "http://www.w3.org/2000/svg";
+            const ctrlCurvesG = document.getElementById("ctrl-curves");
+            const xferCurvesG = document.getElementById("xfer-curves");
+            const ctrlPktsG = document.getElementById("ctrl-packets");
+            const xferPktsG = document.getElementById("xfer-packets");
+            const copyArrow = document.getElementById("copy-arrow");
+            const phaseLabel = document.getElementById("phase-label");
+
+            // ── Port positions ──
+            const L_PX = [65, 95, 145, 175, 225, 255, 305, 335];
+            const R_PX = [545, 575, 625, 655, 705, 735, 785, 815];
+
+            const L_SW = [
+                [{ x: 50, y: 80 }, { x: 130, y: 80 }, { x: 210, y: 80 }, { x: 290, y: 80 }],
+                [{ x: 50, y: 175 }, { x: 130, y: 175 }, { x: 210, y: 175 }, { x: 290, y: 175 }],
+                [{ x: 50, y: 270 }, { x: 130, y: 270 }, { x: 210, y: 270 }, { x: 290, y: 270 }],
+            ];
+            const R_SW = [
+                [{ x: 530, y: 80 }, { x: 610, y: 80 }, { x: 690, y: 80 }, { x: 770, y: 80 }],
+                [{ x: 530, y: 175 }, { x: 610, y: 175 }, { x: 690, y: 175 }, { x: 770, y: 175 }],
+                [{ x: 530, y: 270 }, { x: 610, y: 270 }, { x: 690, y: 270 }, { x: 770, y: 270 }],
+            ];
+
+            const Y = {
+                top: 40, s1T: 80, s1B: 120, s2T: 175, s2B: 215, s3T: 270, s3B: 310, bot: 350,
+            };
+
+            const N = 8, LOG_N = 3;
+            const ADDRESSES = [5, 2, 4, 3, 1, 6, 0, 7];
+            const SW_W = 60, SW_H = 40;
+            const COLORS = [
+                "#e63946", "#f4845f", "#d4a017", "#2a9d8f", "#457b9d", "#6a4c93", "#1d3557", "#e76f51"
+            ];
+
+            function omegaShuffle(pos) {
+                return ((pos << 1) | (pos >> (LOG_N - 1))) & (N - 1);
+            }
+
+            // ── Simulation (switch then shuffle) ──
+            function simulate() {
+                let pos = ADDRESSES.map((_, i) => i);
+                const snaps = [pos.slice()];
+                for (let s = 0; s < LOG_N; s++) {
+                    const bit = LOG_N - 1 - s;
+                    const after = pos.slice();
+                    for (let sw = 0; sw < N / 2; sw++) {
+                        let uP = -1, lP = -1;
+                        for (let i = 0; i < N; i++) {
+                            if (pos[i] === sw * 2) uP = i;
+                            if (pos[i] === sw * 2 + 1) lP = i;
+                        }
+                        if (uP >= 0 && lP >= 0 && (ADDRESSES[uP] >> bit) & 1 && !((ADDRESSES[lP] >> bit) & 1)) {
+                            after[uP] = sw * 2 + 1; after[lP] = sw * 2;
+                        }
+                    }
+                    pos = after; snaps.push(pos.slice());
+                    if (s < LOG_N - 1) {
+                        const sh = new Array(N);
+                        for (let i = 0; i < N; i++) sh[i] = omegaShuffle(pos[i]);
+                        pos = sh; snaps.push(pos.slice());
+                    }
+                }
+                return snaps;
+            }
+            // sim: [init(0), sw0(1), shuf0(2), sw1(3), shuf1(4), sw2(5)]
+            const sim = simulate();
+
+            // ── Switch states ──
+            function computeStates() {
+                const states = [];
+                for (let s = 0; s < LOG_N; s++) {
+                    const bef = sim[s * 2], aft = sim[s * 2 + 1], row = [];
+                    for (let sw = 0; sw < N / 2; sw++) {
+                        let uP = -1, lP = -1;
+                        for (let i = 0; i < N; i++) {
+                            if (bef[i] === sw * 2) uP = i;
+                            if (bef[i] === sw * 2 + 1) lP = i;
+                        }
+                        if (uP < 0 || lP < 0) { row.push('pass'); continue; }
+                        if (aft[uP] === sw * 2 + 1 && aft[lP] === sw * 2) row.push('swap');
+                        else row.push('pass');
+                    }
+                    states.push(row);
+                }
+                return states;
+            }
+            const swStates = computeStates();
+
+            // ── Bezier helpers ──
+            function makeBez(sx, sy, ex, ey) {
+                return { from: { x: sx, y: sy }, cp1: { x: sx, y: sy + (ey - sy) * 2 / 3 }, cp2: { x: ex, y: sy + (ey - sy) / 3 }, to: { x: ex, y: ey } };
+            }
+            function evalBez(c, t) {
+                const u = 1 - t;
+                return {
+                    x: u * u * u * c.from.x + 3 * u * u * t * c.cp1.x + 3 * u * t * t * c.cp2.x + t * t * t * c.to.x,
+                    y: u * u * u * c.from.y + 3 * u * u * t * c.cp1.y + 3 * u * t * t * c.cp2.y + t * t * t * c.to.y
+                };
+            }
+            function bezD(c) { return `M${c.from.x},${c.from.y} C${c.cp1.x},${c.cp1.y} ${c.cp2.x},${c.cp2.y} ${c.to.x},${c.to.y}`; }
+
+            // ── Build switch curves ──
+            function getCurves(boxes, s, sw, topToBot) {
+                const box = boxes[s][sw];
+                const lx = box.x + SW_W / 4, rx = box.x + 3 * SW_W / 4;
+                const t = box.y + 5, b = box.y + SW_H - 5;
+                const [fromY, toY] = topToBot ? [t, b] : [b, t];
+                if (swStates[s][sw] === 'swap')
+                    return { upper: makeBez(lx, fromY, rx, toY), lower: makeBez(rx, fromY, lx, toY) };
+                return { upper: makeBez(lx, fromY, lx, toY), lower: makeBez(rx, fromY, rx, toY) };
+            }
+
+            // ── Create curve SVG groups ──
+            function buildCurveGroups(parentG, boxes, topToBot, beforeSnaps) {
+                const groups = [], allC = [];
+                for (let s = 0; s < LOG_N; s++) {
+                    const g = document.createElementNS(SVG_NS, "g");
+                    g.style.display = "none"; parentG.appendChild(g); groups.push(g);
+                    const sc = [];
+                    for (let sw = 0; sw < N / 2; sw++) {
+                        const curves = getCurves(boxes, s, sw, topToBot);
+                        sc.push(curves);
+                        const bef = beforeSnaps[s];
+                        let uP = -1, lP = -1;
+                        for (let i = 0; i < N; i++) { if (bef[i] === sw * 2) uP = i; if (bef[i] === sw * 2 + 1) lP = i; }
+                        for (const [pk, cv] of [[uP, curves.upper], [lP, curves.lower]]) {
+                            if (pk < 0) continue;
+                            const p = document.createElementNS(SVG_NS, "path");
+                            p.setAttribute("d", bezD(cv)); p.setAttribute("fill", "none");
+                            p.setAttribute("stroke", COLORS[pk]); p.setAttribute("stroke-width", "3.5");
+                            p.setAttribute("stroke-linecap", "round"); p.setAttribute("opacity", "0.6");
+                            g.appendChild(p);
+                        }
+                    }
+                    allC.push(sc);
+                }
+                return { groups, curves: allC };
+            }
+
+            // Control: before switch s = sim[s*2], top-to-bottom
+            const ctrlBeforeSnaps = [sim[0], sim[2], sim[4]];
+            const ctrl = buildCurveGroups(ctrlCurvesG, R_SW, true, ctrlBeforeSnaps);
+
+            // Transfer: before reverse-switch s = sim[s*2+1], bottom-to-top
+            // Visual stage 0 (top) = ctrl stage 0 reversed, before = sim[1]
+            // Visual stage 1 = ctrl stage 1 reversed, before = sim[3]
+            // Visual stage 2 (bottom) = ctrl stage 2 reversed, before = sim[5]
+            const xferBeforeSnaps = [sim[1], sim[3], sim[5]];
+            const xfer = buildCurveGroups(xferCurvesG, L_SW, false, xferBeforeSnaps);
+
+            function revealCtrlCurves(maxStage) {
+                for (let s = 0; s < LOG_N; s++) ctrl.groups[s].style.display = s <= maxStage ? "" : "none";
+            }
+            function revealXferCurves(maxStage) {
+                for (let s = 0; s < LOG_N; s++) xfer.groups[s].style.display = s <= maxStage ? "" : "none";
+            }
+            function hideCtrlCurves() { for (let s = 0; s < LOG_N; s++) ctrl.groups[s].style.display = "none"; }
+            function hideXferCurves() { for (let s = 0; s < LOG_N; s++) xfer.groups[s].style.display = "none"; }
+
+            // ── Get packet Bezier for a given network ──
+            function getPktBez(curvesData, beforeSnap, pkt) {
+                const pos = beforeSnap[pkt];
+                const c = curvesData[Math.floor(pos / 2)];
+                return (pos % 2 === 0) ? c.upper : c.lower;
+            }
+
+            // ── Control steps (top to bottom) ──
+            const C_STEPS = [
+                { type: 'sw', stg: 0, yS: Y.top, yE: Y.s1B, swT: Y.s1T, swB: Y.s1B },
+                { type: 'sh', yS: Y.s1B, yE: Y.s2T },
+                { type: 'sw', stg: 1, yS: Y.s2T, yE: Y.s2B, swT: Y.s2T, swB: Y.s2B },
+                { type: 'sh', yS: Y.s2B, yE: Y.s3T },
+                { type: 'sw', stg: 2, yS: Y.s3T, yE: Y.bot, swT: Y.s3T, swB: Y.s3B },
+            ];
+            const C_SN_S = [0, 1, 2, 3, 4], C_SN_E = [1, 2, 3, 4, 5];
+
+            // ── Transfer steps (bottom to top) ──
+            // Step 0: Switch 3 (ctrl stg 2 reversed)
+            // Step 1: Shuffle 2 (reversed)
+            // Step 2: Switch 2 (ctrl stg 1 reversed)
+            // Step 3: Shuffle 1 (reversed)
+            // Step 4: Switch 1 (ctrl stg 0 reversed)
+            const T_STEPS = [
+                { type: 'sw', stg: 2, yS: Y.bot, yE: Y.s3T, swT: Y.s3T, swB: Y.s3B },
+                { type: 'sh', yS: Y.s3T, yE: Y.s2B },
+                { type: 'sw', stg: 1, yS: Y.s2B, yE: Y.s2T, swT: Y.s2T, swB: Y.s2B },
+                { type: 'sh', yS: Y.s2T, yE: Y.s1B },
+                { type: 'sw', stg: 0, yS: Y.s1B, yE: Y.top, swT: Y.s1T, swB: Y.s1B },
+            ];
+            const T_SN_S = [5, 4, 3, 2, 1], T_SN_E = [4, 3, 2, 1, 0];
+
+            // ── Position computation ──
+            function getPos(portX, snapS, snapE, curvesData, beforeSnaps, step, pkt, t) {
+                const s = step;
+                const x0 = portX[snapS[pkt]], x1 = portX[snapE[pkt]];
+                if (s.type === 'sh') return { x: x0 + (x1 - x0) * t, y: s.yS + (s.yE - s.yS) * t };
+
+                const goingUp = s.yE < s.yS;
+                const entryY = goingUp ? s.swB : s.swT;
+                const exitY = goingUp ? s.swT : s.swB;
+                const totY = Math.abs(s.yE - s.yS);
+                const seg1 = Math.abs(entryY - s.yS);
+                const seg2 = s.swB - s.swT;
+                const seg3 = Math.abs(s.yE - exitY);
+                const f1 = seg1 / totY, f2 = seg2 / totY;
+
+                const bez = getPktBez(curvesData[s.stg], beforeSnaps[s.stg], pkt);
+
+                if (f1 > 0 && t <= f1) {
+                    const lt = t / f1;
+                    return { x: x0 + (bez.from.x - x0) * lt, y: s.yS + (entryY - s.yS) * lt };
+                } else if (t <= f1 + f2) {
+                    const bt = f2 > 0 ? (t - f1) / f2 : 0;
+                    return evalBez(bez, bt);
+                } else {
+                    const f3 = seg3 / totY;
+                    const pt = f3 > 0 ? (t - f1 - f2) / f3 : 1;
+                    return { x: bez.to.x + (x1 - bez.to.x) * pt, y: exitY + (s.yE - exitY) * pt };
+                }
+            }
+
+            // ── Create packet elements ──
+            function createPackets(parent) {
+                const els = [];
+                for (let i = 0; i < N; i++) {
+                    const g = document.createElementNS(SVG_NS, "g"); g.style.display = "none";
+                    const c = document.createElementNS(SVG_NS, "circle");
+                    c.setAttribute("r", "8"); c.setAttribute("fill", COLORS[i]);
+                    c.setAttribute("stroke", "#fff"); c.setAttribute("stroke-width", "1.5");
+                    g.appendChild(c);
+                    const lb = document.createElementNS(SVG_NS, "text");
+                    lb.setAttribute("class", "packet-label"); lb.setAttribute("text-anchor", "middle");
+                    lb.setAttribute("dy", "3.5"); lb.textContent = i.toString();
+                    g.appendChild(lb);
+                    parent.appendChild(g); els.push(g);
+                }
+                return els;
+            }
+            const cPkts = createPackets(ctrlPktsG);
+            const tPkts = createPackets(xferPktsG);
+
+            function setPkt(els, i, x, y) { els[i].style.display = ""; els[i].setAttribute("transform", `translate(${x},${y})`); }
+            function hideSet(els) { for (let i = 0; i < N; i++) els[i].style.display = "none"; }
+
+            // ── Easing ──
+            function ease(t) { return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; }
+
+            // ── Timing ──
+            const SD = 700, SP = 300, NS = 5;
+            const FLOW = NS * SD + (NS - 1) * SP;
+            const P0 = 600;                    // initial pause
+            const P1 = FLOW;                   // control flow
+            const P2 = 500;                    // pause at ctrl output
+            const P3 = 800;                    // copy states
+            const P4 = 400;                    // pause before transfer
+            const P5 = FLOW;                   // transfer flow
+            const P6 = 800;                    // final hold
+            const P7 = 500;                    // reset
+            const PHASES = [P0, P1, P2, P3, P4, P5, P6, P7];
+            const TOTAL = PHASES.reduce((a, b) => a + b, 0);
+
+            const C_LABELS = ["Switch Stage 1", "Shuffle 1", "Switch Stage 2", "Shuffle 2", "Switch Stage 3"];
+            const T_LABELS = ["Switch Stage 3", "Inv. Shuffle 2", "Switch Stage 2", "Inv. Shuffle 1", "Switch Stage 1"];
+
+            function stepFromFlow(flowT) {
+                const blk = SD + SP;
+                const si = Math.min(Math.floor(flowT / blk), NS - 1);
+                const wi = flowT - si * blk;
+                const t = wi < SD ? ease(wi / SD) : 1;
+                return { si, t };
+            }
+
+            let t0 = null;
+            function animate(ts) {
+                if (!t0) t0 = ts;
+                const el = (ts - t0) % TOTAL;
+
+                // Determine phase
+                let ph = 0, acc = 0;
+                for (let i = 0; i < PHASES.length; i++) { if (el < acc + PHASES[i]) { ph = i; break; } acc += PHASES[i]; }
+                const pT = el - acc;
+
+                switch (ph) {
+                    case 0: // initial pause
+                        hideSet(cPkts); hideSet(tPkts); hideCtrlCurves(); hideXferCurves();
+                        copyArrow.style.display = "none";
+                        for (let i = 0; i < N; i++) {
+                            setPkt(cPkts, i, R_PX[sim[0][i]], Y.top);
+                        }
+                        phaseLabel.textContent = "";
+                        break;
+
+                    case 1: { // control flow
+                        hideSet(tPkts); copyArrow.style.display = "none"; hideXferCurves();
+                        const { si, t } = stepFromFlow(pT);
+                        const st = C_STEPS[si];
+                        const maxCurveStage = st.type === 'sw' ? st.stg : C_STEPS[Math.max(0, si - 1)].stg;
+                        revealCtrlCurves(maxCurveStage);
+                        phaseLabel.textContent = "Control: " + C_LABELS[si];
+                        for (let i = 0; i < N; i++) {
+                            const p = getPos(R_PX, sim[C_SN_S[si]], sim[C_SN_E[si]], ctrl.curves, ctrlBeforeSnaps, st, i, t);
+                            setPkt(cPkts, i, p.x, p.y);
+                        }
+                        break;
+                    }
+
+                    case 2: // pause at ctrl output
+                        revealCtrlCurves(LOG_N - 1); hideSet(tPkts);
+                        for (let i = 0; i < N; i++) setPkt(cPkts, i, R_PX[sim[5][i]], Y.bot);
+                        phaseLabel.textContent = "Addresses arrived at banks";
+                        break;
+
+                    case 3: // copy states
+                        revealCtrlCurves(LOG_N - 1); revealXferCurves(LOG_N - 1);
+                        copyArrow.style.display = "";
+                        hideSet(tPkts);
+                        for (let i = 0; i < N; i++) setPkt(cPkts, i, R_PX[sim[5][i]], Y.bot);
+                        phaseLabel.textContent = "← Copy switch states to Transfer Network";
+                        break;
+
+                    case 4: // pause before transfer
+                        revealCtrlCurves(LOG_N - 1); revealXferCurves(LOG_N - 1);
+                        copyArrow.style.display = "";
+                        hideSet(cPkts);
+                        for (let i = 0; i < N; i++) setPkt(tPkts, i, L_PX[sim[5][i]], Y.bot);
+                        phaseLabel.textContent = "Data enters Transfer Network from banks";
+                        break;
+
+                    case 5: { // transfer flow
+                        hideSet(cPkts); copyArrow.style.display = "";
+                        revealCtrlCurves(LOG_N - 1);
+                        const { si, t } = stepFromFlow(pT);
+                        const st = T_STEPS[si];
+                        // Reveal transfer curves: stage 2 first (bottom), then 1, then 0
+                        const maxXferStage = st.type === 'sw' ? st.stg : T_STEPS[Math.max(0, si - 1)].stg;
+                        revealXferCurves(LOG_N - 1); // show all (they were copied)
+                        phaseLabel.textContent = "Transfer: " + T_LABELS[si];
+                        for (let i = 0; i < N; i++) {
+                            const p = getPos(L_PX, sim[T_SN_S[si]], sim[T_SN_E[si]], xfer.curves, xferBeforeSnaps, st, i, t);
+                            setPkt(tPkts, i, p.x, p.y);
+                        }
+                        break;
+                    }
+
+                    case 6: // final hold
+                        hideSet(cPkts); revealCtrlCurves(LOG_N - 1); revealXferCurves(LOG_N - 1);
+                        copyArrow.style.display = "";
+                        for (let i = 0; i < N; i++) setPkt(tPkts, i, L_PX[sim[0][i]], Y.top);
+                        phaseLabel.textContent = "Data delivered to read ports ✓";
+                        break;
+
+                    case 7: // reset
+                        hideSet(cPkts); hideSet(tPkts); hideCtrlCurves(); hideXferCurves();
+                        copyArrow.style.display = "none";
+                        phaseLabel.textContent = "";
+                        break;
+                }
+                requestAnimationFrame(animate);
+            }
+            requestAnimationFrame(animate);
+        })();
+    </script>
+
+</body>
+
+</html>

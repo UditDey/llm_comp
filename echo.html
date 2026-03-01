@@ -227,6 +227,11 @@
                     reverse. This is what allows the banks to "multicast" data to read-ports, reducing serialization.
                 </figcaption>
             </figure>
+            <figure>
+                <iframe src="img/echo/animation.html" title="Echo Cache Animation" width="100%" height="500"
+                    style="border:0; display:block;" loading="lazy"></iframe>
+                <figcaption>Figure 6: Echo Cache animation</figcaption>
+            </figure>
             <p>
                 This presents an issue: if some packets are dropped in the control phase, those read-ports will never
                 receive their data. To solve this, we include <u>retry logic</u>, that sees which read-ports
