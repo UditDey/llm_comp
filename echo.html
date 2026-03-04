@@ -345,7 +345,7 @@
             <p>
                 I developed a proof-of-concept RTL implementation and testbench for the Echo Cache utilizing 2x2
                 switches with the Omega Network topology. The full code <a
-                    href="https://github.com/UditDey/pitch_site/blob/main/code/echo/model">can be found here</a>. It
+                    href="https://github.com/UditDey/pitch_site/blob/main/code/echo/rtl">can be found here</a>. It
                 proves that the concept works, and the retry logic is sound.
             </p>
             <p>
@@ -564,6 +564,10 @@ endmodule</code></pre>
                 We confirmed functionality with an RTL model, and then performed a topology-only PnR test on the SKY130
                 process, which proved Echo Cache's superior area scaling relative to a crossbar for the same number of
                 ports, a gap that only widens with port count.
+            </p>
+            <p>
+                The Echo Cache is a powerful design for gather-heavy code and I hope its integration in future hardware
+                can allow codebook compressed LLM weights without sacrificing inference throughput.
             </p>
         </div>
     </main>
