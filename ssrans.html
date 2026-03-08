@@ -25,8 +25,8 @@
             <h2>The Problem</h2>
             <p>
                 We start with <a href="https://arxiv.org/abs/2505.22913">MUSTAFAR</a>. The paper proposes a
-                straightforward technique for pruning LLM KV caches, allowing for compression. In order to actually
-                compress the resulting sparse KV matrix, they <a
+                straightforward technique for unstructured pruning of LLM KV caches, allowing for compression. In order
+                to actually compress the resulting sparse KV matrix, they <a
                     href="https://github.com/dhjoo98/mustafar/blob/main/kernel/compression.py">built Triton kernels</a>
                 that use a <u>bitmap compression</u> scheme for compactly storing sparse data.
             </p>
@@ -42,10 +42,11 @@
                 for storage and bandwidth savings with acceptable loss in model quality.
             </p>
             <p>
-                Bitmaps show up often as a go-to solution for storing sparse data. The general idea is to encode sparse
-                data in a <code>(bitmap, dense_array)</code> pair. The bitmap has one bit for each element, telling us
-                if it's zero or not, and the dense array stores the actual values of the non-zeros. This is a simple
-                compression scheme and provides decent compression ratios, but it has certain limitations.
+                Bitmaps show up often as a go-to solution for storing unstructured sparse data. The general idea is to
+                encode sparse data in a <code>(bitmap, dense_array)</code> pair. The bitmap has one bit for each
+                element, telling us if it's zero or not, and the dense array stores the actual values of the non-zeros.
+                This is a simple compression scheme and provides decent compression ratios, but it has certain
+                limitations.
             </p>
             <p>
                 First of all, bitmap schemes are <u>information-theoretically suboptimal</u>. At high sparsity, the
@@ -54,7 +55,7 @@
                 since bitmaps have a 1 bit-per-symbol ceiling. Secondly, vectorized compression and decompression under
                 bitmap schemes requires <u>global, cross-lane operations</u>, namely <u>prefix-sums</u>, as well as
                 large <u>scatter/gather</u> operations. This can result in poor performance on certain AI accelerators,
-                like Google's TPU or AWS's Trainium.
+                like Google's TPU.
             </p>
 
             <h2>Vectorized Bitmap Compression</h2>
@@ -99,9 +100,9 @@
             </p>
             <p>
                 This is acceptable on GPUs, where a small number of threads share fast <code>__shared__</code> memory.
-                But consider dedicated AI accelerators like TPU or Trainium, which are not designed like GPUs. They are
-                divided into Vector Processing Units (VPU) and Matrix Multiply Units (MXU). Any
-                compression/decompression algorithm would run on the VPU and feed from VMEM.
+                But consider dedicated AI accelerators like TPU, which are not designed like GPUs. They are divided into
+                Vector Processing Units (VPU) and Matrix Multiply Units (MXU). Any compression/decompression algorithm
+                would run on the VPU and feed from VMEM.
             </p>
             <p>
                 Scatter/gathers and prefix-sums on TPU are significantly slower than on GPUs. This is because of
@@ -139,6 +140,29 @@
                         sparsity</a> but that is a scheme for structured sparsity only. The zeros must follow
                     a 2:4 pattern, but pruning techniques make no guarantee that they will produce such a pattern.
                     Hence the need for an algorithm for general <u>unstructured sparsity</u>.
+                </p>
+            </div>
+            <div class="callout aside">
+                <strong>What about SparseCores?</strong>
+                <p>
+                    My argument so far hinges on TPUs having poor scatter/gather performance. However, newer versions of
+                    the TPU have SparseCores, quite explicitly designed for scatter/gather. So what gives?
+                </p>
+                <p>
+                    SparseCores seem to be designed for vector embedding lookups. The <a
+                        href="https://docs.jax.dev/en/latest/pallas/tpu/sparsecore.html#gather-and-scatter">Pallas
+                        docs</a> suggest that SparseCore's scatter/gather support is for irregular accesses to HBM
+                    memory. It targets the DMA path from HBM to VMEM.
+                </p>
+                <p>
+                    SparseCore does not seem to be the right machinery for this. Accesses to HBM are obviously slower
+                    than VMEM. It makes sense for large embedding tables that are too large for VMEM, which is the main
+                    function of the SparseCore. Additionally, even if SparseCores could be used for sparse matrix
+                    compression/decompression, there doesn't seem to be a direct link between it and the MXU, unlike
+                    VMEM and the MXU
+                </p>
+                <p>
+                    So the point still stands: TPU has poor scatter/gather performance on VMEM.
                 </p>
             </div>
 

@@ -117,6 +117,14 @@
                     restore output accuracy without significantly harming compression ratios.
                 </p>
             </div>
+            <div class="callout aside">
+                <strong>The General Idea</strong>
+                <p>
+                    CCPO and SpQR are both implementations of a more general idea: that because weight's aren't
+                    uniformly important, aggressive forms of quantization can be made viable by correcting only a small
+                    percentage of quantized weights.
+                </p>
+            </div>
 
             <h2>Experimental Setup</h2>
             <p>
@@ -326,6 +334,13 @@
                 matrix. Storing the codebook and indices is simple enough, but storing the sparse patches needs some
                 thought, since CCPO is a feasible idea only if the storage space taken up by the sparse patches doesn't
                 dwarf the compression gains achieved by the codebook + indices.
+            </p>
+            <p>
+                SpQR used a <a
+                    href="https://en.wikipedia.org/wiki/Sparse_matrix#Compressed_sparse_row_(CSR,_CRS_or_Yale_format)">CSR</a>-like
+                format for the sparse outlier matrix. Their approach is simple, just like bitmaps from the <a
+                    href="ssrans.html">previous article</a>, but adds considerable storage overhead. Overall compression
+                will be hurt significantly at higher patching budgets.
             </p>
             <p>
                 The first optimization we can do is to not store the sparse patch matrix separately. Instead, we

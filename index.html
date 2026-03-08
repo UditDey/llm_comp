@@ -22,21 +22,16 @@
                 LLMs more memory efficient.
             </p>
             <p>
-                My focus is on techniques that go beyond simple quantization, since I believe quantization has reached
-                its limit. The next-gen of mass-scale LLM inference will need different tools.
-            </p>
-            <p>
-                This page documents some of my efforts. I focus on <b>codebook compression of LLM weights</b>, and
-                <b>unstructured KV cache pruning</b>.
+                My focus is on supporting:
             </p>
             <ul>
-                <li><b>Echo Cache</b> provides the hardware to decompress codebook indices at high throughput</li>
-                <li><b>CCPO</b> makes codebook compression more viable by patching outlier weights</li>
-                <li><b>SSrANS</b> handles compression and decompression of unstructured sparse data</li>
+                <li>Unstructured sparsity</li>
+                <li>LLM codebook compression</li>
+                <li>Aggressive quantization with sparse corrections</li>
             </ul>
             <p>
-                Everything builds on existing academic work — no wheels are reinvented, and each article includes code
-                and diagrams for clear explanation.
+                I believe that current research on pruning and aggressive/"experimental" quantization are promising, and
+                they only need the proper hardware and algorithmic support to become viable.
             </p>
 
             <div class="callout aside">
@@ -117,9 +112,9 @@
                 single-layer experiment.
             </p>
             <p>
-                The sparse patches can be intermixed into the index stream and decoded with entropy coding (akin to
-                SSrANS), so the full decompression pipeline stays compact and free of irregular memory access. This is
-                the piece that makes codebook compression more viable.
+                The sparse patches can be intermixed into the index stream and entropy coded (akin to SSrANS), so the
+                full decompression pipeline stays compact and free of irregular memory access. This is the piece that
+                makes codebook compression more viable.
             </p>
             <p><a href="ccpo.html">Click here to read more 👈</a></p>
         </div>

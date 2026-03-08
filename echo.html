@@ -186,16 +186,24 @@
                 Hence, both aforementioned requirements are satisfied.
             </p>
             <div class="callout aside">
-                <strong>Prior Work</strong>
+                <strong>Prior Art</strong>
                 <p>
-                    The Echo Cache design <a
-                        href="https://scispace.com/pdf/replication-and-reduction-in-multistage-interconnection-cy4tv6mn2n.pdf">has
-                        prior art</a> such as the <a href="https://en.wikipedia.org/wiki/Ultracomputer">NYU
-                        Ultracomputer</a>
+                    The Echo Cache design has prior art such as the <a
+                        href="https://en.wikipedia.org/wiki/Ultracomputer">NYU Ultracomputer</a>.
                 </p>
                 <p>
-                    In that context, MINs with merging capability were used to connect CPUs to memory modules. Quite
-                    similar to what we're doing here. However the control phase and retry logic mechanisms are novel.
+                    In the Ultracomputer, MINs with merging capability were used to connect CPUs to memory modules.
+                    Quite
+                    similar to what we're doing here. The goal there was to accelerate concurrent fetch-and-add
+                    operations.
+                </p>
+                <p>
+                    The Echo Cache is the same idea as the Ultracomputer, applied to a different context.
+                </p>
+                <p>
+                    <a
+                        href="https://scispace.com/pdf/replication-and-reduction-in-multistage-interconnection-cy4tv6mn2n.pdf">This
+                        paper</a> is dedicated to MINs with packet replication and reduction capabilities.
                 </p>
             </div>
 
@@ -339,6 +347,18 @@
                 control network decides on the "left-merge" state, i.e. it merges two address packets and forwards them
                 to the left output. Then in the transfer network, the corresponding switch will operate in
                 <i>reverse</i>, i.e. it will duplicate a data packet, enabling multicast behaviour.
+            </p>
+
+            <h2>Software and Recycling Variants</h2>
+            <p>
+                If your SIMD hardware supports shuffle/swizzle operations, it's possible for the MINs to be simulated in
+                software rather than with dedicated hardware. You can simulate layer by layer, recording switch states,
+                and then replay it back.
+            </p>
+            <p>
+                Alternatively, if the MIN topology chosen is uniform (i.e each layer has the same structure), then only
+                a single hardware layer needs to be implemented. Packets can be recycled through that singular layer,
+                with switch states being accumulated in a buffer.
             </p>
 
             <h2>RTL Functional Model</h2>
